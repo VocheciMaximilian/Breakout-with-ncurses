@@ -74,35 +74,46 @@ void moveBall(struct bricks **bricks, int bricksRows, int bricksCollumns, int *n
         ball.dx*=-1;
     if(ball.y<=0 || ball.y>=window.rows-1)
         ball.dy*=-1;
-    if(ball.y>paddle.y-2 && ball.x>=paddle.x && ball.x<=paddle.x+paddle.width ){
+    if(ball.y==paddle.y-1 && ball.x>=paddle.x && ball.x<=paddle.x+paddle.width ){
         ball.dy*=-1;
+    } else if( (ball.x==paddle.x || ball.x==paddle.x+paddle.width) && ball.y>=paddle.y && ball.y<=paddle.y+1){
+        ball.dx*=-1;
     }
     for(int i = 0; i < bricksRows; i++)
-    for(int j = 0; j < bricksCollumns; j++)
-        if(bricks[i][j].hp > 0 &&
-           ball.x >= bricks[i][j].x &&
-           ball.x < bricks[i][j].x + bricks[i][j].width &&
-           ball.y >= bricks[i][j].y &&
-           ball.y < bricks[i][j].y + bricks[i][j].height) {
-
-            bricks[i][j].hp--;
-            ball.dy *= -1;
-
-            if(bricks[i][j].hp <= 0)
-                (*numberOfBricks)--;
-
-            return;
-        }
-
-    if((*numberOfBricks)==0) exit(1);
+        for(int j = 0; j < bricksCollumns; j++)
+            if(bricks[i][j].hp>0){
+                bool wasHit=false;
+                if(ball.y==bricks[i][j].y && ball.x>=bricks[i][j].x && ball.x<=bricks[i][j].x+bricks[i][j].width){
+                    ball.dy*=-1;
+                    wasHit=true;
+                } else if(!wasHit && ball.y==bricks[i][j].y+bricks[i][j].height && ball.x>=bricks[i][j].x && ball.x<=bricks[i][j].x+bricks[i][j].width){
+                    ball.dy*=-1;
+                    wasHit=true;
+                } else if(!wasHit && ball.x==bricks[i][j].x && ball.y>=bricks[i][j].y && ball.y<=bricks[i][j].y+bricks[i][j].height){
+                    ball.dx*=-1;
+                    wasHit=true;
+                } else if(!wasHit && ball.x==bricks[i][j].x+bricks[i][j].width && ball.y>=bricks[i][j].y && ball.y<=bricks[i][j].y+bricks[i][j].height){
+                    ball.dx*=-1;
+                    wasHit=true;
+                }
+                if(wasHit){
+                    if(bricks[i][j].hp>0) bricks[i][j].hp--;
+                    else if((*numberOfBricks)>0) (*numberOfBricks)--;
+                    else printf("GAME OVER");
+                }
+            }
 }
 
 void handleInput(WINDOW *win){
     int ch=wgetch(win);
-    if(ch == KEY_LEFT && paddle.x>0)
-        paddle.x-=2;
-    if(ch == KEY_RIGHT && paddle.x+paddle.width<window.cols-1)
-        paddle.x+=2;
+    if(ch == KEY_LEFT && paddle.x>0){
+        paddle.x-=1;
+        return;
+    }
+    if(ch == KEY_RIGHT && paddle.x+paddle.width<window.cols-1){
+        paddle.x+=1;
+        return;
+    }
     if(ch=='q'){
         delwin(win);
         endwin();
