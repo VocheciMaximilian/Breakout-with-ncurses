@@ -1,4 +1,5 @@
 #include <ncurses.h>
+#include <time.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <math.h>
@@ -67,66 +68,95 @@ void freeMem(struct bricks **bricks, int bricksRows){
     free(bricks);
 }
 
-void moveBall(struct bricks **bricks, int bricksRows, int bricksCollumns, int *numberOfBricks){
+void moveBall(struct bricks **bricks, int bricksRows, int bricksCollumns, int *numberOfBricks, int *score, bool *gameOver){
     ball.x+=ball.dx;
     ball.y+=ball.dy;
-    if(ball.x<=0 || ball.x>=window.cols-1)
-        ball.dx*=-1;
-    if(ball.y<=0 || ball.y>=window.rows-1)
-        ball.dy*=-1;
     if(ball.y==paddle.y-1 && ball.x>=paddle.x && ball.x<=paddle.x+paddle.width ){
         ball.dy*=-1;
     } else if( (ball.x==paddle.x || ball.x==paddle.x+paddle.width) && ball.y>=paddle.y && ball.y<=paddle.y+1){
         ball.dx*=-1;
+    } else if(ball.x<=0 || ball.x>=window.cols-1)
+        ball.dx*=-1;
+    else if(ball.y<=0)
+        ball.dy*=-1;
+    else if(ball.y>=window.rows) {
+        (*gameOver)=true;
+        return;
     }
     for(int i = 0; i < bricksRows; i++)
         for(int j = 0; j < bricksCollumns; j++)
             if(bricks[i][j].hp>0){
                 bool wasHit=false;
-                if(ball.y==bricks[i][j].y && ball.x>=bricks[i][j].x && ball.x<=bricks[i][j].x+bricks[i][j].width){
+                if( (ball.y==bricks[i][j].y || ball.y==bricks[i][j].y) && ball.x>=bricks[i][j].x && ball.x<=bricks[i][j].x+bricks[i][j].width){
                     ball.dy*=-1;
                     wasHit=true;
-                } else if(!wasHit && ball.y==bricks[i][j].y+bricks[i][j].height && ball.x>=bricks[i][j].x && ball.x<=bricks[i][j].x+bricks[i][j].width){
-                    ball.dy*=-1;
-                    wasHit=true;
-                } else if(!wasHit && ball.x==bricks[i][j].x && ball.y>=bricks[i][j].y && ball.y<=bricks[i][j].y+bricks[i][j].height){
-                    ball.dx*=-1;
-                    wasHit=true;
-                } else if(!wasHit && ball.x==bricks[i][j].x+bricks[i][j].width && ball.y>=bricks[i][j].y && ball.y<=bricks[i][j].y+bricks[i][j].height){
+                } else if(!wasHit && (ball.x==bricks[i][j].x || ball.x==bricks[i][j].x+bricks[i][j].width) && ball.y>=bricks[i][j].y && ball.y<=bricks[i][j].y+bricks[i][j].height){
                     ball.dx*=-1;
                     wasHit=true;
                 }
                 if(wasHit){
-                    if(bricks[i][j].hp>0) bricks[i][j].hp--;
+                    if(bricks[i][j].hp>0) {
+                        bricks[i][j].hp--;
+                        (*score)++;
+                    }
                     else if((*numberOfBricks)>0) (*numberOfBricks)--;
                     else printf("GAME OVER");
                 }
             }
 }
-
-void handleInput(WINDOW *win){
+bool lastChDiff(WINDOW *win, int ch){
+    int lastCh=wgetch(win);
+    return lastCh!=ch;
+}
+void handleInput(WINDOW *win, bool *gameStarted){
+    static int lastDir=0;
     int ch=wgetch(win);
-    if(ch == KEY_LEFT && paddle.x>0){
-        paddle.x-=1;
-        return;
+
+    switch(ch) {
+        case KEY_LEFT:
+        case 'a':
+            if((*gameStarted)==false) return;
+            if (paddle.x > 0) {
+                if (lastDir != -1) {
+                    flushinp();
+                    lastDir = -1;
+                }
+                paddle.x -= 2;
+            }
+            break;
+        case KEY_RIGHT:
+        case 'd':
+            if((*gameStarted)==false) return;
+            if(paddle.x+paddle.width <window.cols-1){
+                if(lastDir!=1){
+                    flushinp();
+                    lastDir=1;
+                }
+                paddle.x += 2;
+            }
+            break;
+        case ' ':
+            *gameStarted=true;
+            break;
+        case 'q':
+            delwin(win);
+            endwin();
+            exit(0);
     }
-    if(ch == KEY_RIGHT && paddle.x+paddle.width<window.cols-1){
-        paddle.x+=1;
-        return;
-    }
-    if(ch=='q'){
-        delwin(win);
-        endwin();
-        exit(0);
-    }
+}
+
+void drawScore(int score) {
+    mvprintw(start.row - 1, start.col + (window.cols / 2) - 7, "Score: %d", score);
+    refresh();
 }
 
 int main(int argc, char ** argv)
 {
+    int score=0;
     window.rows=30; window.cols=50;
-    start.row=0; start.col=0;
-    paddle.x=window.cols/2; paddle.y=window.rows-2; paddle.width=5;
-    ball.x=(paddle.x+paddle.width)/2; ball.y=paddle.y-1; ball.dx=1; ball.dy=1;
+    start.row=1; start.col=0;
+    paddle.width=5; paddle.x=(window.cols-paddle.width)/2; paddle.y=window.rows-2;
+    ball.x=(paddle.x+paddle.width)/2; ball.y=paddle.y-2; ball.dx=1; ball.dy=1;
     struct bricks baseBrick;
     baseBrick.width=5;
     baseBrick.height=2;
@@ -135,6 +165,10 @@ int main(int argc, char ** argv)
     int bricksCollumns=(int)floor(window.cols/(baseBrick.width+padding));
     int bricksRows=(int)floor((window.rows*0.5)/(baseBrick.height+padding));
     int numberOfBricks=bricksCollumns*bricksRows;
+    bool gameStarted=false;
+    bool gameOver=false;
+    clock_t lastBallMove=clock();
+    double ballInterval=1;
 
     printf("Number of bricks on a collumn: %d\n", bricksCollumns);
     printf("Number of brciks on a row: %d\n", bricksRows);
@@ -148,16 +182,16 @@ int main(int argc, char ** argv)
     }
     for(int i=0; i<bricksRows; i++){
         if( (bricks[i]=malloc(bricksCollumns*sizeof(struct bricks)))==NULL){
-                errno=2;
-                freeMem(bricks, bricksRows);
-                perror("Alocare mem *bricks");
-                exit(1);
+            errno=2;
+            freeMem(bricks, bricksRows);
+            perror("Alocare mem *bricks");
+            exit(1);
         }
         for(int j=0; j<bricksCollumns; j++){
             bricks[i][j].width=baseBrick.width;
             bricks[i][j].height=baseBrick.height;
-            bricks[i][j].x=j*(padding+baseBrick.width);
-            bricks[i][j].y=padding+i*(padding+baseBrick.height);
+            bricks[i][j].x=1+j*(padding+baseBrick.width);
+            bricks[i][j].y=1+padding+i*(padding+baseBrick.height);
             bricks[i][j].hp=baseBrick.hp;
         }
     }
@@ -174,15 +208,33 @@ int main(int argc, char ** argv)
 
     while(1){
         werase(win);
+        box(win, 0, 0);
         for(int i=0; i<bricksRows; i++)
             for(int j=0; j<bricksCollumns; j++){
                 drawBrick(win, bricks[i][j]);
             }
         drawPaddle(win);
         drawBall(win);
-        moveBall(bricks, bricksRows, bricksCollumns, &numberOfBricks);
-        handleInput(win);
-        napms(50);
+        handleInput(win, &gameStarted);
+        if (gameStarted) {
+            clock_t now=clock();
+            double elapsed=(double)(now-lastBallMove)/CLOCKS_PER_SEC*1000;
+            if(elapsed>=ballInterval){
+                moveBall(bricks, bricksRows, bricksCollumns, &numberOfBricks, &score, &gameOver);
+                lastBallMove=now;
+            }
+        } else {
+            ball.x = paddle.x + paddle.width / 2;
+        }
+        if(gameOver){
+            mvprintw(start.row + window.rows / 2, start.col + window.cols / 2 - 5, "GAME OVER");
+            refresh();
+            nodelay(win, FALSE);
+            wgetch(win);
+            break;
+        }        
+        drawScore(score);
+        napms(30);
         wrefresh(win);
     }
 
